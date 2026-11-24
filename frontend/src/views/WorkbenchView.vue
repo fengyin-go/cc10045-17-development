@@ -1,5 +1,8 @@
 <template>
   <section class="page" :data-module="meta.key">
+    <BatchAggregationPanel v-if="meta.key === 'cube_builder'" />
+    <BatchDashboardPanel v-if="meta.key === 'dashboard_builder'" />
+
     <header class="page-head">
       <div>
         <h2>{{ meta.name }}</h2>
@@ -104,6 +107,8 @@ import {
   runAction as applyAction,
 } from '@/api/backend-service'
 import type { EntryRow } from '@/data/types'
+import BatchAggregationPanel from '@/views/BatchAggregationPanel.vue'
+import BatchDashboardPanel from '@/views/BatchDashboardPanel.vue'
 
 const props = defineProps<{ moduleKey: string }>()
 const meta = moduleMeta(props.moduleKey)

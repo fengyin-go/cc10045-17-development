@@ -79,5 +79,46 @@ npm run dev
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
 
+## 地区/渠道成组批量聚合
+
+多维数据集（`cube_builder`）支持一次提交一组**地区/渠道批量聚合**，解决“多次摄入事件后取数口径
+串组、部分失败后补跑覆盖已完成数据、联图拼出两次提交结果”的问题。前端在「多维数据集构建」页操作
+聚合组，在「仪表盘构建器」页查看带版本核对的图表。
+
+### 数据模型（`app/batch_aggregation.py`）
+
+- `aggregation_groups` 聚合组：一次提交一行，创建时把源事件 `batch_id` 快照到
+  `event_batch_ids`，整组后续计算（含补做）只读取这批事件，后摄入的事件不会串入旧组。
+- `aggregation_group_datasets` 数据集逐条记录：每组固定两条（`region` 地区、`channel` 渠道），
+  各自带 `status / measure_value / event_batch_ids / dataset_version / computed_at`；
+  `已完成` 记录不可变。
+- `aggregation_dataset_cells` 完成数据的维度明细，随完成记录一次性写入。
+
+### 关键不变量
+
+1. **固定同一批源事件**：组内所有计算只查快照批次内的 `events`。
+2. **逐条记录 + 不可覆盖**：补做（backfill）只跑 `待计算/计算失败` 的缺失项，已完成数据集
+   原样保留并在返回里标 `skipped_completed=true`。
+3. **仪表盘只读完成记录**：地区图/联图均回传 `provenance`（聚合组、数据集记录 id、版本、
+   源事件批次、完成时间），可核对这次取数用的是哪个版本。
+4. **联图不能跨提交拼装**：两条数据集必须同属一个聚合组且批次快照一致，否则拒绝出数。
+5. **后到事件只进新组**：补做前新摄入的事件不会改变旧组结果，只有另开新聚合组固定新批次时
+   才会被纳入。
+
+### 接口（前缀 `/api/batch-aggregation`，见 `app/routers/batch_aggregation.py`）
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/events/batch` | 摄入一批带 `batch_id` 的源事件（地区/渠道维度计数） |
+| GET | `/events/batches` | 源事件批次清单 |
+| POST | `/groups` | 新增一次提交，固定同一批源事件并初始化两条数据集记录 |
+| GET | `/groups`、`/groups/{id}` | 聚合组与逐条数据集状态 |
+| POST | `/groups/{id}/run` | 整组批量聚合，可传 `fail_dataset_keys` 模拟部分失败 |
+| POST | `/groups/{id}/backfill` | 原组补做：只跑缺失项，不覆盖已完成项 |
+| GET | `/dashboard/region?group_id=` | 地区图（默认最新组），带版本/批次核对信息 |
+| GET | `/dashboard/region-channel?group_id=` | 地区渠道联图，同组两条齐备才出数 |
+| GET | `/dashboard?group_id=` | 成组聚合仪表盘聚合视图 |
+| POST | `/scenario/load` | 一键装载验收场景（原组 70/80、新组 90 且渠道失败、后到事件 61） |
+
 领域：数据工程
 子方向：数据分析与数据应用

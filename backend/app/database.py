@@ -353,6 +353,48 @@ DDL_STATEMENTS = [
         daily_calls INTEGER DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )""",
+
+    # ==================== 成组批量聚合 Tier（地区/渠道数据集） ====================
+    # 一次提交（聚合组）固定同一批源事件（event_batch_ids 快照），
+    # 组内逐条记录每个数据集（region/channel）的完成数据与版本，仪表盘只读取完成记录。
+    """CREATE TABLE IF NOT EXISTS aggregation_groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_code TEXT NOT NULL UNIQUE,
+        group_name TEXT NOT NULL,
+        event_batch_ids TEXT NOT NULL DEFAULT '[]',
+        event_count INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT '待计算',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        completed_at TEXT
+    )""",
+
+    """CREATE TABLE IF NOT EXISTS aggregation_group_datasets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER NOT NULL,
+        dataset_key TEXT NOT NULL,
+        dimension_name TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT '待计算',
+        measure_value REAL,
+        event_batch_ids TEXT NOT NULL DEFAULT '[]',
+        dataset_version INTEGER NOT NULL DEFAULT 1,
+        error_message TEXT,
+        computed_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (group_id) REFERENCES aggregation_groups(id),
+        UNIQUE(group_id, dataset_key)
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_agd_group ON aggregation_group_datasets(group_id, dataset_key)",
+
+    # 数据集完成数据的维度明细，随完成记录一次性写入，供地区图/渠道图核对版本。
+    """CREATE TABLE IF NOT EXISTS aggregation_dataset_cells (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dataset_record_id INTEGER NOT NULL,
+        group_id INTEGER NOT NULL,
+        dimension_value TEXT NOT NULL,
+        cell_value REAL NOT NULL DEFAULT 0.0,
+        FOREIGN KEY (dataset_record_id) REFERENCES aggregation_group_datasets(id)
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_adc_record ON aggregation_dataset_cells(dataset_record_id)",
 ]
 
 
